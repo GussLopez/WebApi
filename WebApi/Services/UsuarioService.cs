@@ -1,121 +1,72 @@
-﻿using Domain.Entities;
+using Dapper;
+using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
+using System.Data;
 using WebApi.Context;
 using WebApi103.Helpers;
 using WebApi103.Services.Interfaces;
+
 namespace WebApi103.Services.Services
 {
-
-    //Tdodas las funcionalidades para la base de datos
     public class UsuarioService : IUsuarioService
-
     {
         private readonly ApplicationDbContext _context;
-        public UsuarioService(ApplicationDbContext context)
-        {
-            _context = context;
+        public UsuarioService(ApplicationDbContext context) => _context = context;
 
-        }
-
-        //Lista de usuarios 
         public async Task<Response<List<Usuario>>> ObtenerUsuario()
         {
-            try
-            {
-                List<Usuario> response = await _context.Usuarios.ToListAsync();
-
-                return new Response<List<Usuario>>(response);
-
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Sucedio un error" + ex.Message);
-
-            }
-
+            var rows = await _context.Database.GetDbConnection().QueryAsync<Usuario>(
+                "dbo.spGetUsers", commandType: CommandType.StoredProcedure);
+            return new Response<List<Usuario>>(rows.ToList());
         }
 
-        public async Task<Response<Usuario>> ById(int id)
+        public Task<Response<Usuario>> ById(int id) =>
+            Execute("dbo.usp_Usuarios_ObtenerPorId", new { Id = id });
+
+        public Task<Response<Usuario>> Delete(int id) =>
+            Execute("dbo.usp_Usuarios_Eliminar", new { Id = id }, "Se eliminó correctamente.");
+
+        public Task<Response<Usuario>> Create(Usuario request)
         {
-            try
-            {
-                Usuario result = await _context.Usuarios.FirstOrDefaultAsync(x => x.PkUsuario == id);
-
-                return new Response<Usuario>(result);
-            }
-            catch (Exception ex)
-            {
-                throw;
-
-            }
+            if (string.IsNullOrWhiteSpace(request.Password))
+                return Task.FromResult(new Response<Usuario>("La contraseña es obligatoria."));
+            var hash = new PasswordHasher<Usuario>().HashPassword(request, request.Password);
+            return Execute("dbo.usp_Usuarios_Crear",
+                new { request.Nombre, request.UserName, PasswordHash = hash, request.FkRol }, "Se creó correctamente.");
         }
 
-        public async Task<Response<Usuario>> Create(Usuario request)
+        public Task<Response<Usuario>> Update(int id, Usuario request)
         {
-            try
-            {
-                Usuario newUsers = new Usuario()
+            var hash = string.IsNullOrWhiteSpace(request.Password)
+                ? null : new PasswordHasher<Usuario>().HashPassword(request, request.Password);
+            return Execute("dbo.usp_Usuarios_Actualizar",
+                new
                 {
-                    Nombre = request.Nombre,
-                    UserName = request.UserName,
-                    Password = request.Password,
-                    FkRol = request.FkRol
-                };
-
-                var result = await _context.Usuarios.AddAsync(newUsers);
-                _context.SaveChanges();
-
-                return new Response<Usuario>(newUsers, "Se creo correctamente");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Sucedió un error al crear el usuario: " + ex.Message);
-            }
+                    Id = id,
+                    request.Nombre,
+                    request.UserName,
+                    PasswordHash = hash,
+                    request.FkRol
+                }, 
+                "Se actualizó correctamente.");
 
         }
 
-        public async Task<Response<Usuario>> Delete(int id)
+        private async Task<Response<Usuario>> Execute(string procedure, object parameters, string message = "")
         {
             try
             {
-                Usuario usuario = await _context.Usuarios.FirstOrDefaultAsync(x => x.PkUsuario == id);
-
-                _context.Usuarios.Remove(usuario);
-                await _context.SaveChangesAsync();
-
-                return new Response<Usuario>(usuario, "Se eliminó correctamente :D");
+                var row = await _context.Database.GetDbConnection().QuerySingleOrDefaultAsync<Usuario>(
+                    procedure, parameters, commandType: CommandType.StoredProcedure);
+                return row == null
+                    ? new Response<Usuario>("El usuario no existe.")
+                    : new Response<Usuario>(row, message);
             }
-            catch (Exception ex)
+            catch (SqlException ex) when (ex.Number == 50001)
             {
-                throw new Exception("Sucedió un error al eliminar el usuario: " + ex.Message);
-            }
-        }
-
-        public async Task<Response<Usuario>> Update(int id, Usuario request)
-        {
-            try
-            {
-                var usuarioExistente = await _context.Usuarios
-                    .Include(x => x.Roles)
-                    .FirstOrDefaultAsync(x => x.PkUsuario == id);
-
-                if (usuarioExistente == null)
-                {
-                    return new Response<Usuario>(null, "El usuario no existe.");
-                }
-
-                usuarioExistente.Nombre = request.Nombre;
-                usuarioExistente.UserName = request.UserName;
-                usuarioExistente.Password = request.Password;
-                usuarioExistente.FkRol = request.FkRol;
-
-                await _context.SaveChangesAsync();
-
-                return new Response<Usuario>(usuarioExistente, "Usuario actualizado correctamente.");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Sucedió un error al actualizar: " + ex.Message);
+                return new Response<Usuario>("El rol indicado no existe. Consulta GET /Roles.", "invalid_role");
             }
         }
     }

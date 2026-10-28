@@ -1,6 +1,7 @@
 ﻿using Domain.dto;
 using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
+using WebApi103.Helpers;
 using WebApi103.Services.Interfaces;
 
 namespace WebApi103.Controllers
@@ -29,12 +30,18 @@ namespace WebApi103.Controllers
         {
             var response = await _usuarioService.ById(id);
 
-            return Ok(response);
+            return response.Succeded ? Ok(response) : NotFound(response);
         }
 
         [HttpPost]
         public async Task<IActionResult> Crear([FromBody] UsuarioDto i)
         {
+            if (string.IsNullOrWhiteSpace(i.Password))
+            {
+                ModelState.AddModelError(nameof(i.Password), "La contraseña es obligatoria.");
+                return ValidationProblem(ModelState);
+            }
+
             Usuario usuario1 = new Usuario()
             {
                 Nombre = i.Nombre,
@@ -42,16 +49,16 @@ namespace WebApi103.Controllers
                 Password = i.Password,
                 FkRol = i.FkRol
             };
-            var result = await _usuarioService.Create(usuario1);
+            Response<Usuario> result = await _usuarioService.Create(usuario1);
 
-            return Ok(result);
+            return result.Succeded ? Ok(result) : BadRequest(result);
         }
 
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var result = await _usuarioService.Delete(id);
-            return Ok(result);
+            Response<Usuario> result = await _usuarioService.Delete(id);
+            return result.Succeded ? Ok(result) : NotFound(result);
         }
         [HttpPut("{id:int}")]
         public async Task<IActionResult> Update(int id, [FromBody] UsuarioDto request)
@@ -60,18 +67,18 @@ namespace WebApi103.Controllers
             {
                 Nombre = request.Nombre,
                 UserName = request.UserName,
-                Password = request.Password,
+                Password = request.Password ?? string.Empty,
                 FkRol = request.FkRol
             };
 
-            var response = await _usuarioService.Update(id, usuarioParaActualizar);
+            Response<Usuario> response = await _usuarioService.Update(id, usuarioParaActualizar);
 
-            if (!response.Succeded && response.Message == "El usuario no existe.")
+            if (response.ErrorCode == "invalid_role")
             {
-                return NotFound(response);
+                return BadRequest(response);
             }
 
-            return Ok(response);
+            return response.Succeded ? Ok(response) : NotFound(response);
         }
 
     }

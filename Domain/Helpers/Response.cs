@@ -14,14 +14,18 @@ namespace WebApi103.Helpers
             Result = data;
         }
 
-        public Response(string message)
+        public Response(string message, string? errorCode = null)
         {
             Message = message;
             Succeded = false;
+            ErrorCode = errorCode;
         }
 
 
         public bool Succeded { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? ErrorCode { get; set; }
 
         public string Message { get; set; }
 

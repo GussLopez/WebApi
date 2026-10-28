@@ -15,7 +15,8 @@ namespace Domain.dto
 
         public string UserName { get; set; }
 
-        public string Password { get; set; }
+        // En una actualización, null o vacío conserva la contraseña actual.
+        public string? Password { get; set; }
 
         public int FkRol { get; set; }
     }
